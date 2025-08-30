@@ -1,8 +1,10 @@
 ﻿// Copyright (c) Microsoft. All rights reserved.
 
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using System.Text.Json;
 using Microsoft.SemanticKernel.ChatCompletion;
 using OpenAI.Responses;
@@ -52,9 +54,15 @@ internal static class OpenAIResponseExtensions
         }
         else if (item is ReasoningResponseItem reasoningResponseItem)
         {
-            if (reasoningResponseItem.SummaryParts is not null && reasoningResponseItem.SummaryParts.Count > 0)
+            // Use reflection to safely access SummaryParts to avoid version mismatch issues
+            var summaryPartsProperty = reasoningResponseItem.GetType().GetProperty("SummaryParts");
+            if (summaryPartsProperty != null)
             {
-                return new ChatMessageContent(AuthorRole.Assistant, item.ToChatMessageContentItemCollection(), innerContent: reasoningResponseItem);
+                var summaryParts = summaryPartsProperty.GetValue(reasoningResponseItem);
+                if (summaryParts is ICollection collection && collection.Count > 0)
+                {
+                    return new ChatMessageContent(AuthorRole.Assistant, item.ToChatMessageContentItemCollection(), innerContent: reasoningResponseItem);
+                }
             }
         }
         else if (item is FunctionCallResponseItem functionCallResponseItem)
@@ -77,7 +85,17 @@ internal static class OpenAIResponseExtensions
         }
         else if (item is ReasoningResponseItem reasoningResponseItem)
         {
-            return reasoningResponseItem.SummaryParts.ToChatMessageContentItemCollection();
+            // Use reflection to safely access SummaryParts to avoid version mismatch issues
+            var summaryPartsProperty = reasoningResponseItem.GetType().GetProperty("SummaryParts");
+            if (summaryPartsProperty != null)
+            {
+                var summaryParts = summaryPartsProperty.GetValue(reasoningResponseItem);
+                if (summaryParts is IList<ReasoningSummaryPart> parts)
+                {
+                    return parts.ToChatMessageContentItemCollection();
+                }
+            }
+            return new ChatMessageContentItemCollection();
         }
         else if (item is FunctionCallResponseItem functionCallResponseItem)
         {
@@ -195,7 +213,7 @@ internal static class OpenAIResponseExtensions
         return collection;
     }
 
-    private static ChatMessageContentItemCollection ToChatMessageContentItemCollection(this IReadOnlyList<ReasoningSummaryPart> parts)
+    private static ChatMessageContentItemCollection ToChatMessageContentItemCollection(this IList<ReasoningSummaryPart> parts)
     {
         var collection = new ChatMessageContentItemCollection();
         foreach (var part in parts)
